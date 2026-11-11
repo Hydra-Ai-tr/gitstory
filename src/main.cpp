@@ -18,7 +18,7 @@ void complain(const std::string& message) {
   std::fprintf(stderr, "gitstory: %s\n", message.c_str());
 }
 
-int run(const gitstory::Options& options) {
+int run(const gitstory::Options& options, gitstory::Lang lang) {
   using namespace gitstory;
 
   const RepoInfo repo = describe_repo(options.log.repo);
@@ -37,6 +37,7 @@ int run(const gitstory::Options& options) {
   if (!options.svg_path.empty()) {
     SvgOptions svg;
     svg.dark = !options.light_theme;
+    svg.lang = lang;
     const std::string card = render_svg(stats, repo, svg);
     if (options.svg_path == "-") {
       write_stdout(card);
@@ -51,9 +52,10 @@ int run(const gitstory::Options& options) {
   }
 
   if (options.json) {
-    write_stdout(render_json(stats, repo));
+    write_stdout(render_json(stats, repo, lang));
   } else if (options.svg_path.empty()) {
     TermOptions term;
+    term.lang = lang;
     switch (options.glyphs) {
       case GlyphMode::Full: term.glyphs = GlyphSet::Full; break;
       case GlyphMode::Basic: term.glyphs = GlyphSet::Basic; break;
@@ -92,8 +94,10 @@ int main(int argc, char** argv) {
     return kExitUsage;
   }
 
+  const gitstory::Lang lang = options.lang.value_or(gitstory::preferred_language());
   if (options.help) {
-    std::fputs(gitstory::usage_text().c_str(), stdout);
+    gitstory::ConsoleSession console;
+    gitstory::write_stdout(gitstory::usage_text(lang));
     return 0;
   }
   if (options.version) {
@@ -102,7 +106,7 @@ int main(int argc, char** argv) {
   }
 
   try {
-    return run(options);
+    return run(options, lang);
   } catch (const gitstory::GitError& error) {
     complain(error.what());
     return kExitFailure;

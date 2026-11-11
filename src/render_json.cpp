@@ -145,10 +145,11 @@ void write_commit(Json& j, const CommitRef& c) {
 
 }  // namespace
 
-std::string render_json(const Stats& s, const RepoInfo& repo) {
+std::string render_json(const Stats& s, const RepoInfo& repo, Lang lang) {
   Json j;
   j.begin_object();
   j.key("gitstory_version").value(GITSTORY_VERSION);
+  j.key("language").value(lang_code(lang));
   j.key("repository").value(repo.name);
 
   j.key("totals").begin_object();
@@ -275,7 +276,7 @@ std::string render_json(const Stats& s, const RepoInfo& repo) {
   j.end_object();
 
   j.key("roast").begin_array();
-  for (const std::string& text : build_roast(s)) j.value(text);
+  for (const std::string& text : build_roast(s, lang)) j.value(text);
   j.end_array();
 
   j.end_object();

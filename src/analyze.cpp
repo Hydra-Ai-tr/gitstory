@@ -42,7 +42,12 @@ const std::unordered_set<std::string>& stop_words() {
       // Turkish
       "bir", "ile", "için", "icin", "olan", "olarak", "gibi", "daha", "çok", "cok", "ama",
       "veya", "hem", "kadar", "sonra", "önce", "once", "artık", "artik", "bazı", "bazi", "her",
-      "şey", "sey", "biraz", "diye", "oldu", "var", "yok",
+      "şey", "sey", "biraz", "diye", "oldu", "var", "yok", "ise", "değil", "degil", "tüm", "tum",
+      "bütün", "butun", "yani", "hiç", "hic", "şimdi", "simdi",
+      // Russian
+      "для", "что", "это", "как", "при", "без", "или", "так", "все", "всё", "уже", "ещё", "еще",
+      "его", "они", "над", "под", "про", "чем", "где", "там", "тут", "после", "перед", "через",
+      "также", "только", "теперь", "более",
   };
   return words;
 }

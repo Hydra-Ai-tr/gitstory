@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "git.hpp"
+#include "i18n.hpp"
 
 namespace gitstory {
 
@@ -169,6 +170,6 @@ std::string file_extension(std::string_view path);
 LanguageStat language_for_extension(std::string_view extension);
 
 // Light-hearted one-liners derived from the numbers.
-std::vector<std::string> build_roast(const Stats& stats);
+std::vector<std::string> build_roast(const Stats& stats, Lang lang = Lang::En);
 
 }  // namespace gitstory

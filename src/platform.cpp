@@ -56,6 +56,26 @@ bool is_msys_pty(HANDLE handle) {
 
 }  // namespace
 
+Lang preferred_language() {
+  for (const char* name : {"GITSTORY_LANG", "LC_ALL", "LC_MESSAGES", "LANG"}) {
+    const char* value = std::getenv(name);
+    if (value == nullptr || value[0] == '\0') continue;
+    // "C" and "POSIX" (also "C.UTF-8") say nothing about the user's language.
+    if (std::strcmp(value, "POSIX") == 0 || (value[0] == 'C' && (value[1] == '\0' || value[1] == '.'))) {
+      continue;
+    }
+    return parse_lang(value).value_or(Lang::En);
+  }
+#ifdef _WIN32
+  switch (PRIMARYLANGID(GetUserDefaultUILanguage())) {
+    case LANG_TURKISH: return Lang::Tr;
+    case LANG_RUSSIAN: return Lang::Ru;
+    default: break;
+  }
+#endif
+  return Lang::En;
+}
+
 #ifdef _WIN32
 
 std::vector<std::string> utf8_args(int, char**) {

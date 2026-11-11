@@ -7,6 +7,7 @@
 
 #include "analyze.hpp"
 #include "git.hpp"
+#include "i18n.hpp"
 
 namespace gitstory {
 
@@ -23,14 +24,17 @@ struct TermOptions {
   std::size_t width = 80;
   std::size_t top = 10;  // rows per ranking
   bool roast = false;
+  Lang lang = Lang::En;
 };
 
 std::string render_terminal(const Stats& stats, const RepoInfo& repo, const TermOptions& options);
 
-std::string render_json(const Stats& stats, const RepoInfo& repo);
+// Keys and dates are language-neutral; only the roast lines follow `lang`.
+std::string render_json(const Stats& stats, const RepoInfo& repo, Lang lang = Lang::En);
 
 struct SvgOptions {
   bool dark = true;
+  Lang lang = Lang::En;
 };
 
 std::string render_svg(const Stats& stats, const RepoInfo& repo, const SvgOptions& options);

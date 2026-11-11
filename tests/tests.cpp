@@ -10,6 +10,7 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <stdexcept>
 #include <string>
@@ -24,6 +25,7 @@ int g_passed = 0;
 
 std::string show(const std::string& value) { return "\"" + value + "\""; }
 std::string show(std::string_view value) { return show(std::string(value)); }
+std::string show(const char* value) { return show(std::string(value)); }
 std::string show(std::int64_t value) { return std::to_string(value); }
 std::string show(int value) { return std::to_string(value); }
 std::string show(unsigned value) { return std::to_string(value); }
@@ -821,7 +823,7 @@ void test_render() {
   repo.name = "demo";
   repo.root = "/work/demo";
   const std::string empty_json = render_json(Stats{}, repo);
-  CHECK(contains(empty_json, "\"gitstory_version\": \"0.1.0\""));
+  CHECK(contains(empty_json, "\"gitstory_version\": \"" GITSTORY_VERSION "\""));
   CHECK(contains(empty_json, "\"repository\": \"demo\""));
   CHECK(!contains(empty_json, "\"span\""));
   CHECK(contains(empty_json, "\"average_length\": 0.0000"));
@@ -961,6 +963,247 @@ void test_terminal_layouts() {
       CHECK(widest <= width);
     }
   }
+}
+
+// ---- report languages ------------------------------------------------------
+
+void set_env(const char* name, const char* value) {
+#ifdef _WIN32
+  _putenv_s(name, value);
+#else
+  if (value[0] == '\0') {
+    unsetenv(name);
+  } else {
+    setenv(name, value, 1);
+  }
+#endif
+}
+
+std::size_t widest_line(const std::string& text) {
+  std::size_t widest = 0;
+  std::size_t start = 0;
+  while (start < text.size()) {
+    std::size_t end = text.find('\n', start);
+    if (end == std::string::npos) end = text.size();
+    widest = std::max(widest, gitstory::display_width(std::string_view(text).substr(start, end - start)));
+    start = end + 1;
+  }
+  return widest;
+}
+
+void test_i18n() {
+  using namespace gitstory;
+  CHECK(parse_lang("tr") == Lang::Tr);
+  CHECK(parse_lang("TR") == Lang::Tr);
+  CHECK(parse_lang("tr_TR.UTF-8") == Lang::Tr);
+  CHECK(parse_lang("Türkçe") == Lang::Tr);
+  CHECK(parse_lang("ru-RU") == Lang::Ru);
+  CHECK(parse_lang("русский") == Lang::Ru);
+  CHECK(parse_lang("en_US.UTF-8") == Lang::En);
+  CHECK(parse_lang("english") == Lang::En);
+  CHECK(!parse_lang("de_DE.UTF-8").has_value());
+  CHECK(!parse_lang("true").has_value());
+  CHECK(!parse_lang("").has_value());
+  CHECK_EQ(std::string(lang_code(Lang::Ru)), std::string("ru"));
+
+  const Locale en(Lang::En);
+  const Locale tr(Lang::Tr);
+  const Locale ru(Lang::Ru);
+
+  CHECK_EQ(en.number(1234567), std::string("1,234,567"));
+  CHECK_EQ(tr.number(1234567), std::string("1.234.567"));
+  CHECK_EQ(ru.number(1234567), std::string("1\u00A0234\u00A0567"));
+  CHECK_EQ(ru.number(-1234), std::string("-1\u00A0234"));
+  CHECK_EQ(en.percent(0.19), std::string("19%"));
+  CHECK_EQ(tr.percent(0.19), std::string("%19"));
+  CHECK_EQ(tr.percent(0.004), std::string("<%1"));
+  CHECK_EQ(ru.percent(0.004), std::string("<1%"));
+  CHECK_EQ(en.percent1(0.709), std::string("70.9%"));
+  CHECK_EQ(tr.percent1(0.709), std::string("%70,9"));
+  CHECK_EQ(ru.percent1(0.709), std::string("70,9%"));
+  CHECK_EQ(en.compact(50200), std::string("50.2k"));
+  CHECK_EQ(tr.compact(50200), std::string("50,2k"));
+  CHECK_EQ(tr.compact(9999), std::string("9.999"));
+
+  // Russian plurals: 1, 21, 101 -> one; 2-4, 22-24 -> few; 5-20, 11-14, 111 -> many.
+  const Noun& commit = ru.text().commit;
+  CHECK_EQ(ru.count(1, commit), std::string("1 коммит"));
+  CHECK_EQ(ru.count(2, commit), std::string("2 коммита"));
+  CHECK_EQ(ru.count(4, commit), std::string("4 коммита"));
+  CHECK_EQ(ru.count(5, commit), std::string("5 коммитов"));
+  CHECK_EQ(ru.count(11, commit), std::string("11 коммитов"));
+  CHECK_EQ(ru.count(12, commit), std::string("12 коммитов"));
+  CHECK_EQ(ru.count(14, commit), std::string("14 коммитов"));
+  CHECK_EQ(ru.count(21, commit), std::string("21 коммит"));
+  CHECK_EQ(ru.count(22, commit), std::string("22 коммита"));
+  CHECK_EQ(ru.count(111, commit), std::string("111 коммитов"));
+  CHECK_EQ(ru.count(0, commit), std::string("0 коммитов"));
+  CHECK_EQ(tr.count(41, tr.text().commit), std::string("41 commit"));
+  CHECK_EQ(tr.count(1, tr.text().author), std::string("1 yazar"));
+  CHECK_EQ(en.count(1, en.text().commit), std::string("1 commit"));
+  CHECK_EQ(en.count(0, en.text().commit), std::string("0 commits"));
+
+  const std::int64_t day = days_from_civil(2025, 5, 3);
+  CHECK_EQ(en.date(day), std::string("May 3, 2025"));
+  CHECK_EQ(tr.date(day), std::string("3 May 2025"));
+  CHECK_EQ(ru.date(day), std::string("3 мая 2025"));
+  CHECK_EQ(ru.month_year(day), std::string("май 2025"));
+  CHECK_EQ(en.day_month(day, false), std::string("May 3"));
+  CHECK_EQ(tr.day_month(days_from_civil(2025, 10, 9), false), std::string("9 Eki"));
+  CHECK_EQ(tr.weekday_short(2), std::string("Çar"));
+  CHECK_EQ(ru.weekday_short(6), std::string("Вс"));
+  CHECK_EQ(tr.weekday(0), std::string("Pazartesi"));
+  CHECK_EQ(tr.weekday_in_sentence(0), std::string("pazartesi"));
+  CHECK_EQ(std::string(en.weekday(9)), std::string("???"));
+  CHECK_EQ(std::string(ru.month_short(13)), std::string("???"));
+
+  CHECK_EQ(en.span(42), std::string("42 days"));
+  CHECK_EQ(en.span(3192), std::string("8y 8m"));
+  CHECK_EQ(tr.span(3192), std::string("8 yıl 8 ay"));
+  CHECK_EQ(ru.span(3192), std::string("8 лет 8 мес."));
+  CHECK_EQ(ru.span(1), std::string("1 день"));
+  CHECK_EQ(en.span_prose(3192), std::string("8 years and 8 months"));
+  CHECK_EQ(tr.span_prose(3192), std::string("8 yıl 8 ay"));
+  CHECK_EQ(ru.span_prose(3192), std::string("8 лет и 8 месяцев"));
+  CHECK_EQ(ru.span_prose(760), std::string("2 года"));
+  CHECK_EQ(en.duration(3 * 86400), std::string("3 days"));
+  CHECK_EQ(tr.duration(7 * 3600), std::string("7 sa"));
+  CHECK_EQ(ru.duration(12 * 60), std::string("12 мин"));
+  CHECK_EQ(tr.language_name("Other"), std::string("Diğer"));
+  CHECK_EQ(ru.language_name("Lockfiles"), std::string("Lock-файлы"));
+  CHECK_EQ(en.language_name("Other"), std::string("Other"));
+  CHECK_EQ(tr.language_name("Rust"), std::string("Rust"));
+
+  CHECK_EQ(fill("{1} then {0}", {"a", "b"}), std::string("b then a"));
+  CHECK_EQ(fill("{0} and {5}", {"x"}), std::string("x and "));
+  CHECK_EQ(fill("no args {", {}), std::string("no args {"));
+  CHECK_EQ(split_template("a{0}b").size(), 3u);
+
+  // Every template only refers to arguments its callers provide.
+  for (const Lang lang : {Lang::En, Lang::Tr, Lang::Ru}) {
+    const Strings& t = Locale(lang).text();
+    for (const char* tmpl : {t.who_one, t.story_lead, t.roast_lazy_top, t.week_of}) {
+      for (const TemplatePart& part : split_template(tmpl)) CHECK(part.arg <= 1);
+    }
+    for (const char* tmpl : {t.story_rhythm, t.story_active, t.story_lang_two, t.roast_hot_file,
+                             t.roast_dominant, t.roast_short, t.roast_streak, t.roast_silent}) {
+      for (const TemplatePart& part : split_template(tmpl)) CHECK(part.arg <= 1);
+    }
+    for (const TemplatePart& part : split_template(t.story_span)) CHECK(part.arg <= 5);
+    CHECK(contains(usage_text(lang), "--lang"));
+  }
+  CHECK(contains(usage_text(Lang::Tr), "Kullanım"));
+  CHECK(contains(usage_text(Lang::Ru), "Использование"));
+
+  set_env("GITSTORY_LANG", "tr");
+  CHECK(preferred_language() == Lang::Tr);
+  set_env("GITSTORY_LANG", "ru_RU.UTF-8");
+  CHECK(preferred_language() == Lang::Ru);
+  set_env("GITSTORY_LANG", "de_DE.UTF-8");
+  CHECK(preferred_language() == Lang::En);
+  set_env("GITSTORY_LANG", "");
+
+  CHECK(!parse_args({}).lang.has_value());
+  CHECK(parse_args({"--lang", "tr"}).lang == Lang::Tr);
+  CHECK(parse_args({"--lang=ru"}).lang == Lang::Ru);
+  CHECK(!parse_args({"--lang", "tr", "--lang", "auto"}).lang.has_value());
+  expect_usage({"--lang", "klingon"}, "auto, en, tr or ru");
+  expect_usage({"--lang"}, "needs a value");
+}
+
+void test_localized_reports() {
+  using namespace gitstory;
+  RepoInfo repo;
+  repo.name = "dil";
+  const Stats week = history(9, 3);
+  const Stats months = history(120, 4);
+  const Stats years = history(1500, 9);
+
+  TermOptions term;
+  term.width = 100;
+  term.roast = true;
+  term.lang = Lang::Tr;
+  const std::string tr_daily = render_terminal(week, repo, term);
+  CHECK(contains(tr_daily, "Aktivite"));
+  CHECK(contains(tr_daily, "Ritim"));
+  CHECK(contains(tr_daily, "Öne çıkanlar"));
+  CHECK(contains(tr_daily, "Taşlama"));
+  CHECK(contains(tr_daily, "Çar"));
+  CHECK(contains(unwrap(tr_daily), "Ada ve Bob toplam"));
+  CHECK(contains(tr_daily, "En yoğun gün"));
+  CHECK(!contains(tr_daily, "Activity"));
+  CHECK(contains(render_terminal(years, repo, term), "her sütun = "));
+  CHECK(contains(render_terminal(months, repo, term), "az "));
+
+  term.lang = Lang::Ru;
+  const std::string ru_daily = render_terminal(week, repo, term);
+  CHECK(contains(ru_daily, "Активность"));
+  CHECK(contains(ru_daily, "Прожарка"));
+  CHECK(contains(unwrap(ru_daily), "авторы — Ada и Bob"));
+  CHECK(contains(ru_daily, "Ср"));
+  CHECK(contains(render_terminal(years, repo, term), "столбец = "));
+
+  CHECK_EQ(render_terminal(Stats{}, repo, term), std::string("Коммиты не найдены.\n"));
+  term.lang = Lang::Tr;
+  CHECK_EQ(render_terminal(Stats{}, repo, term), std::string("Hiç commit bulunamadı.\n"));
+
+  // No placeholder survives and every line fits, in every language and layout.
+  for (const Lang lang : {Lang::En, Lang::Tr, Lang::Ru}) {
+    term.lang = lang;
+    for (const std::size_t width : {60u, 80u, 110u}) {
+      term.width = width;
+      for (const GlyphSet glyphs : {GlyphSet::Full, GlyphSet::Ascii}) {
+        term.glyphs = glyphs;
+        for (const Stats* s : {&week, &months, &years}) {
+          const std::string text = render_terminal(*s, repo, term);
+          CHECK(widest_line(text) <= width);
+          CHECK(!contains(text, "{0}"));
+          CHECK(!contains(text, "{1}"));
+        }
+      }
+    }
+  }
+
+  // A one-author, one-day history exercises the remaining sentence forms.
+  Analyzer single;
+  Commit c = make_commit(2024, 1, 1, 3, 15, "abc123", "Ada", "ada@x.com", "feat: widgets");
+  add_file(c, "src/app.cpp", 8, 1);
+  single.add(c);
+  const Stats one = single.finish();
+  term.width = 80;
+  term.lang = Lang::Tr;
+  CHECK(contains(unwrap(render_terminal(one, repo, term)), "tek bir günde"));
+  term.lang = Lang::Ru;
+  CHECK(contains(unwrap(render_terminal(one, repo, term)), "автор — Ada"));
+
+  // JSON keys stay English; only the roast follows the language.
+  const std::string json_tr = render_json(years, repo, Lang::Tr);
+  CHECK(contains(json_tr, "\"language\": \"tr\""));
+  CHECK(contains(json_tr, "\"Mon\""));
+  CHECK(contains(json_tr, "\"commits\""));
+  const std::string json_en = render_json(years, repo);
+  CHECK(contains(json_en, "\"language\": \"en\""));
+
+  SvgOptions svg;
+  svg.lang = Lang::Tr;
+  const std::string card_tr = render_svg(years, repo, svg);
+  CHECK(contains(card_tr, "Commit&#39;ler ne zaman geliyor"));
+  CHECK(contains(card_tr, "Pzt"));
+  CHECK(contains(card_tr, "lang=\"tr\""));
+  svg.lang = Lang::Ru;
+  const std::string card_ru = render_svg(years, repo, svg);
+  CHECK(contains(card_ru, "Активность во времени"));
+  CHECK(contains(card_ru, "Пн"));
+
+  for (const Lang lang : {Lang::En, Lang::Tr, Lang::Ru}) {
+    for (const std::string& line : build_roast(years, lang)) {
+      CHECK(!line.empty());
+      CHECK(!contains(line, "{"));
+    }
+  }
+  const std::vector<std::string> roast_ru = build_roast(years, Lang::Ru);
+  CHECK(std::any_of(roast_ru.begin(), roast_ru.end(),
+                    [](const std::string& l) { return contains(l, "коммит"); }));
 }
 
 void test_languages() {
@@ -1134,6 +1377,8 @@ int main() {
     test_cli();
     test_render();
     test_terminal_layouts();
+    test_i18n();
+    test_localized_reports();
     test_languages();
     test_process_and_repo();
   } catch (const std::exception& error) {

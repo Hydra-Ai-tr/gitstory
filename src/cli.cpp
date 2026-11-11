@@ -22,7 +22,72 @@ std::int64_t parse_positive(const std::string& option, const std::string& text,
 
 }  // namespace
 
-std::string usage_text() {
+std::string usage_text(Lang lang) {
+  switch (lang) {
+    case Lang::Tr:
+      return "gitstory " GITSTORY_VERSION
+             " - bir git deposunun hikâyesi, terminalinde\n"
+             "\n"
+             "Kullanım: gitstory [yol] [seçenekler]\n"
+             "\n"
+             "  yol                   İncelenecek depo (varsayılan: bulunduğun klasör)\n"
+             "\n"
+             "Geçmişi seçme:\n"
+             "      --rev <rev>       Gezilecek dal, etiket veya aralık (varsayılan: HEAD)\n"
+             "      --all             Tüm dalları ve etiketleri gez\n"
+             "      --since <tarih>   Yalnızca bu tarihten sonraki commit'ler (ör. 2024-01-01)\n"
+             "      --until <tarih>   Yalnızca bu tarihten önceki commit'ler\n"
+             "      --author <metin>  Yalnızca yazarı eşleşen commit'ler\n"
+             "      --no-merges       Birleştirme commit'lerini dışarıda bırak\n"
+             "  -n, --max-count <n>   En yeni <n> commit'ten sonra dur\n"
+             "\n"
+             "Çıktı:\n"
+             "      --lang <dil>      auto, en, tr veya ru (varsayılan: sistem dili)\n"
+             "      --roast           Depoyu tatlı sert bir dille taşla\n"
+             "      --json            Tüm istatistikleri JSON olarak yaz\n"
+             "      --svg <dosya>     Paylaşılabilir bir SVG kartı yaz (stdout için '-')\n"
+             "      --light           SVG kartında açık temayı kullan\n"
+             "      --top <n>         Sıralamalardaki satır sayısı (varsayılan: 10)\n"
+             "      --width <n>       Rapor genişliği, sütun (varsayılan: terminal genişliği)\n"
+             "      --color <mod>     auto, always veya never (NO_COLOR'a uyar)\n"
+             "      --glyphs <set>    auto, full, basic (klasik Windows konsolu) veya ascii\n"
+             "      --ascii           --glyphs ascii ile aynı\n"
+             "\n"
+             "  -h, --help            Bu yardımı göster\n"
+             "  -V, --version         Sürümü göster\n";
+    case Lang::Ru:
+      return "gitstory " GITSTORY_VERSION
+             " - история git-репозитория прямо в терминале\n"
+             "\n"
+             "Использование: gitstory [путь] [параметры]\n"
+             "\n"
+             "  путь                  Репозиторий для анализа (по умолчанию: текущая папка)\n"
+             "\n"
+             "Выбор истории:\n"
+             "      --rev <rev>       Ветка, тег или диапазон (по умолчанию: HEAD)\n"
+             "      --all             Все ветки и теги\n"
+             "      --since <дата>    Только коммиты после этой даты (напр. 2024-01-01)\n"
+             "      --until <дата>    Только коммиты до этой даты\n"
+             "      --author <текст>  Только коммиты подходящего автора\n"
+             "      --no-merges       Без коммитов слияния\n"
+             "  -n, --max-count <n>   Только <n> самых новых коммитов\n"
+             "\n"
+             "Вывод:\n"
+             "      --lang <язык>     auto, en, tr или ru (по умолчанию: язык системы)\n"
+             "      --roast           Добавить шуточную прожарку репозитория\n"
+             "      --json            Вывести всю статистику в JSON\n"
+             "      --svg <файл>      Сохранить SVG-карточку ('-' для stdout)\n"
+             "      --light           Светлая тема для SVG-карточки\n"
+             "      --top <n>         Строк в рейтингах (по умолчанию: 10)\n"
+             "      --width <n>       Ширина отчёта в столбцах (по умолчанию: ширина терминала)\n"
+             "      --color <когда>   auto, always или never (учитывает NO_COLOR)\n"
+             "      --glyphs <набор>  auto, full, basic (классическая консоль Windows) или ascii\n"
+             "      --ascii           То же, что --glyphs ascii\n"
+             "\n"
+             "  -h, --help            Показать эту справку\n"
+             "  -V, --version         Показать версию\n";
+    case Lang::En: break;
+  }
   return "gitstory " GITSTORY_VERSION
          " - the story of a git repository, told in your terminal\n"
          "\n"
@@ -40,6 +105,7 @@ std::string usage_text() {
          "  -n, --max-count <n>   Stop after the newest <n> commits\n"
          "\n"
          "Output:\n"
+         "      --lang <lang>     auto, en, tr or ru (default: the system language)\n"
          "      --roast           Add a light-hearted roast of the repository\n"
          "      --json            Print every statistic as JSON\n"
          "      --svg <file>      Write a shareable SVG card ('-' for stdout)\n"
@@ -121,6 +187,15 @@ Options parse_args(const std::vector<std::string>& args) {
         options.glyphs = GlyphMode::Ascii;
       } else {
         throw UsageError("--glyphs expects auto, full, basic or ascii, got '" + set + "'");
+      }
+    } else if (arg == "--lang") {
+      const std::string name = value();
+      if (name == "auto") {
+        options.lang.reset();
+      } else if (const std::optional<Lang> lang = parse_lang(name)) {
+        options.lang = lang;
+      } else {
+        throw UsageError("--lang expects auto, en, tr or ru, got '" + name + "'");
       }
     } else if (arg == "--light") {
       flag();

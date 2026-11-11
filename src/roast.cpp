@@ -10,107 +10,86 @@ double ratio(std::int64_t part, std::int64_t whole) {
   return whole > 0 ? static_cast<double>(part) / static_cast<double>(whole) : 0.0;
 }
 
-std::string plural(std::int64_t n, const char* singular, const char* many) {
-  return format_number(n) + " " + (n == 1 ? singular : many);
-}
-
 }  // namespace
 
 // Every line is backed by a threshold on a real number, so a tidy repository
 // gets a short roast and a chaotic one gets a long one.
-std::vector<std::string> build_roast(const Stats& s) {
+std::vector<std::string> build_roast(const Stats& s, Lang lang) {
   std::vector<std::string> lines;
   if (s.commits == 0) return lines;
+  const Locale loc(lang);
+  const Strings& t = loc.text();
 
   const double night = ratio(s.night_commits, s.commits);
   if (s.night_commits >= 3 && night >= 0.10) {
-    lines.push_back(format_percent(night) +
-                    " of commits landed between midnight and 5am. Sleep is also a feature.");
+    lines.push_back(fill(t.roast_night, {loc.percent(night)}));
   } else if (s.night_commits == 0 && s.commits >= 50) {
-    lines.push_back("Not a single commit between midnight and 5am. Suspiciously healthy.");
+    lines.push_back(t.roast_healthy);
   }
 
   const double lazy = ratio(s.lazy_messages, s.messages);
   if (s.lazy_messages >= 3 && lazy >= 0.05) {
-    std::string line = plural(s.lazy_messages, "commit message", "commit messages") +
-                       " say nothing at all";
+    std::string top;
     if (!s.lazy_top.empty()) {
-      line += " (\"" + s.lazy_top.front().label + "\" alone appears " +
-              plural(s.lazy_top.front().count, "time", "times") + ")";
+      top = fill(t.roast_lazy_top,
+                 {s.lazy_top.front().label, loc.count(s.lazy_top.front().count, t.time)});
     }
-    lines.push_back(line + ". Future you will be thrilled.");
+    lines.push_back(fill(t.roast_lazy, {loc.count(s.lazy_messages, t.message), top}));
   }
 
   if (s.messages >= 10 && s.avg_subject_length < 15.0) {
-    lines.push_back("The average commit message is " +
-                    std::to_string(static_cast<int>(s.avg_subject_length + 0.5)) +
-                    " characters long. Haiku have more detail.");
+    const auto average = static_cast<std::int64_t>(s.avg_subject_length + 0.5);
+    lines.push_back(
+        fill(t.roast_short, {loc.number(average), loc.count(average, t.character)}));
   }
 
   if (s.longest_gap_seconds >= 30 * 86400) {
-    lines.push_back("Went silent for " + format_duration(s.longest_gap_seconds) + " starting " +
-                    format_date(floor_div(s.gap_from, 86400)) + ". The repo waited patiently.");
+    lines.push_back(fill(t.roast_silent, {loc.duration(s.longest_gap_seconds),
+                                          loc.date(floor_div(s.gap_from, 86400))}));
   }
 
   if (s.has_biggest_commit) {
     const std::int64_t size = s.biggest_commit.added + s.biggest_commit.deleted;
-    if (size >= 2000) {
-      lines.push_back("One commit changed " + format_number(size) +
-                      " lines. \"Small refactor\", surely.");
-    }
+    if (size >= 2000) lines.push_back(fill(t.roast_big, {loc.count(size, t.line)}));
   }
 
   const double weekend = ratio(s.weekend_commits, s.commits);
   if (s.commits >= 10 && weekend >= 0.30) {
-    lines.push_back(format_percent(weekend) +
-                    " of commits happened on a weekend. Hobbies are overrated anyway.");
+    lines.push_back(fill(t.roast_weekend, {loc.percent(weekend)}));
   }
 
   if (s.friday_evening_commits >= 3) {
-    lines.push_back(plural(s.friday_evening_commits, "commit", "commits") +
-                    " went in on a Friday after 4pm. Bold.");
+    lines.push_back(fill(t.roast_friday, {loc.count(s.friday_evening_commits, t.commit)}));
   }
 
   if (!s.top_files.empty() && s.commits >= 20) {
     const FileStat& hot = s.top_files.front();
     const double share = ratio(hot.commits, s.commits);
-    if (share >= 0.25) {
-      lines.push_back(hot.path + " was touched in " + format_percent(share) +
-                      " of all commits. It has seen things.");
-    }
+    if (share >= 0.25) lines.push_back(fill(t.roast_hot_file, {hot.path, loc.percent(share)}));
   }
 
   if (!s.authors.empty() && s.commits >= 20) {
     const AuthorStat& top = s.authors.front();
     const double share = ratio(top.commits, s.commits);
     if (s.author_count == 1) {
-      lines.push_back("One author, " + plural(s.commits, "commit", "commits") +
-                      ". A one-person band with a bus factor of exactly 1.");
+      lines.push_back(fill(t.roast_solo, {loc.count(s.commits, t.commit)}));
     } else if (share >= 0.80) {
-      lines.push_back(top.name + " wrote " + format_percent(share) +
-                      " of the commits. Everyone else is here for moral support.");
+      lines.push_back(fill(t.roast_dominant, {top.name, loc.percent(share)}));
     }
   }
 
-  if (s.reverts >= 3) {
-    lines.push_back(plural(s.reverts, "revert", "reverts") +
-                    ". Two steps forward, one `git revert` back.");
-  }
+  if (s.reverts >= 3) lines.push_back(fill(t.roast_reverts, {loc.count(s.reverts, t.revert)}));
 
   if (s.longest_streak >= 14) {
-    lines.push_back("A " + format_number(s.longest_streak) +
-                    "-day commit streak. Someone please check on this person.");
+    lines.push_back(fill(t.roast_streak,
+                         {loc.number(s.longest_streak), loc.count(s.longest_streak, t.day)}));
   }
 
   if (s.messages >= 20 && ratio(s.conventional_commits, s.messages) >= 0.90) {
-    lines.push_back("Over 90% Conventional Commits. The linter is proud; the rest of us are "
-                    "a little scared.");
+    lines.push_back(t.roast_conventional);
   }
 
-  if (lines.empty()) {
-    lines.push_back("Nothing to roast. Either this repo is flawless or it is too young to "
-                    "have made mistakes yet.");
-  }
+  if (lines.empty()) lines.push_back(t.roast_nothing);
   return lines;
 }
 

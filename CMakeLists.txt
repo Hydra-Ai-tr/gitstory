@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(gitstory VERSION 0.1.0 DESCRIPTION "The story of a git repository, told in your terminal" LANGUAGES CXX)
+project(gitstory VERSION 0.2.0 DESCRIPTION "The story of a git repository, told in your terminal" LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -15,6 +15,7 @@ add_library(gitstory_core STATIC
   src/analyze.cpp
   src/cli.cpp
   src/git.cpp
+  src/i18n.cpp
   src/platform.cpp
   src/process.cpp
   src/render_json.cpp

@@ -6,7 +6,14 @@
 #include <string_view>
 #include <vector>
 
+#include "i18n.hpp"
+
 namespace gitstory {
+
+// The report language when --lang is not given: GITSTORY_LANG, then the
+// LC_ALL / LC_MESSAGES / LANG locale, then (on Windows) the display language.
+// Anything other than Turkish or Russian falls back to English.
+Lang preferred_language();
 
 // Command-line arguments as UTF-8, without the program name. On Windows the
 // narrow argv is in the ANSI code page and would mangle non-ASCII paths.

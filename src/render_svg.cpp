@@ -51,30 +51,15 @@ std::string num(double value) {
   return out;
 }
 
-// 12345 -> "12.3k", 2500000 -> "2.5M": tiles have room for only a few glyphs.
-std::string compact(std::int64_t n) {
-  if (n < 10000) return format_number(n);
-  char buf[32];
-  if (n < 1000000) {
-    std::snprintf(buf, sizeof buf, "%.1fk", static_cast<double>(n) / 1000.0);
-  } else {
-    std::snprintf(buf, sizeof buf, "%.1fM", static_cast<double>(n) / 1000000.0);
-  }
-  std::string out = buf;
-  for (char& c : out) {
-    if (c == ',') c = '.';
-  }
-  return out;
-}
-
 class Card {
  public:
-  Card(const Stats& stats, const RepoInfo& repo, const Theme& theme)
-      : s_(stats), repo_(repo), t_(theme) {}
+  Card(const Stats& stats, const RepoInfo& repo, const Theme& theme, Lang lang)
+      : s_(stats), repo_(repo), t_(theme), loc_(lang), w_(loc_.text()) {}
 
   std::string build() {
     out_ += "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"800\" height=\"520\" "
-            "viewBox=\"0 0 800 520\" role=\"img\" aria-label=\"gitstory card for " +
+            "viewBox=\"0 0 800 520\" role=\"img\" lang=\"" +
+            std::string(lang_code(loc_.lang())) + "\" aria-label=\"gitstory card for " +
             xml_escape(repo_.name) + "\">\n";
     out_ += "  <title>gitstory: " + xml_escape(repo_.name) + "</title>\n";
     out_ += "  <style>text{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,"
@@ -114,9 +99,9 @@ class Card {
 
   void header() {
     text(24, 44, truncate_right(repo_.name, 38, "…"), 24, t_.text, "600");
-    std::string span = format_date(s_.first_day);
-    if (s_.last_day != s_.first_day) span += " – " + format_date(s_.last_day);
-    text(24, 66, span + "  ·  " + format_span_days(s_.span_days()), 13, t_.muted);
+    std::string span = loc_.date(s_.first_day);
+    if (s_.last_day != s_.first_day) span += " – " + loc_.date(s_.last_day);
+    text(24, 66, span + "  ·  " + loc_.span(s_.span_days()), 13, t_.muted);
     text(776, 44, "gitstory", 14, t_.accent, "600", "end");
   }
 
@@ -126,10 +111,10 @@ class Card {
       const char* label;
     };
     const Tile tiles[] = {
-        {compact(s_.commits), "commits"},
-        {compact(s_.author_count), s_.author_count == 1 ? "author" : "authors"},
-        {compact(s_.active_days), "active days"},
-        {compact(s_.added + s_.deleted), "lines changed"},
+        {loc_.compact(s_.commits), loc_.noun(s_.commits, w_.commit)},
+        {loc_.compact(s_.author_count), loc_.noun(s_.author_count, w_.author)},
+        {loc_.compact(s_.active_days), w_.tile_active_days},
+        {loc_.compact(s_.added + s_.deleted), w_.tile_lines},
     };
     const double width = 176;
     const double gap = 16;
@@ -145,11 +130,11 @@ class Card {
     const double left = 62;
     const double top = 196;
     const double step = 16;
-    text(24, 180, "When commits happen", 13, t_.text, "600");
+    text(24, 180, w_.svg_when, 13, t_.text, "600");
     std::int64_t max = 0;
     for (const auto& row : s_.heatmap) max = std::max(max, *std::max_element(row.begin(), row.end()));
     for (int wd = 0; wd < 7; ++wd) {
-      text(24, top + wd * step + 11, weekday_name(wd), 11, t_.muted);
+      text(24, top + wd * step + 11, loc_.weekday_short(wd), 11, t_.muted);
       for (int h = 0; h < 24; ++h) {
         const std::int64_t v = s_.heatmap[static_cast<std::size_t>(wd)][static_cast<std::size_t>(h)];
         int level = 0;
@@ -167,25 +152,24 @@ class Card {
   void highlights() {
     const double x = 476;
     double y = 180;
-    text(x, y, "Highlights", 13, t_.text, "600");
+    text(x, y, w_.section_highlights, 13, t_.text, "600");
     const auto row = [&](const char* label, const std::string& value) {
       y += 23;
       text(x, y, label, 12, t_.muted);
       text(776, y, value, 12, t_.text, "400", "end");
     };
-    row("Busiest day", format_date(s_.busiest_day) + " (" + format_number(s_.busiest_day_commits) +
-                           ")");
-    row("Longest streak", format_number(s_.longest_streak) +
-                              (s_.longest_streak == 1 ? " day" : " days"));
-    row("Longest break", s_.longest_gap_seconds > 0 ? format_duration(s_.longest_gap_seconds)
-                                                     : std::string("-"));
-    row("Night commits (00-05)", format_percent(share(s_.night_commits, s_.commits)));
-    row("Weekend commits", format_percent(share(s_.weekend_commits, s_.commits)));
+    row(w_.hl_busiest_day,
+        loc_.date(s_.busiest_day) + " (" + loc_.number(s_.busiest_day_commits) + ")");
+    row(w_.hl_streak, loc_.count(s_.longest_streak, w_.day));
+    row(w_.hl_break, s_.longest_gap_seconds > 0 ? loc_.duration(s_.longest_gap_seconds)
+                                                : std::string("-"));
+    row(w_.svg_night, loc_.percent(share(s_.night_commits, s_.commits)));
+    row(w_.svg_weekend, loc_.percent(share(s_.weekend_commits, s_.commits)));
     const auto peak = static_cast<int>(
         std::max_element(s_.by_hour.begin(), s_.by_hour.end()) - s_.by_hour.begin());
     char hour[16];
     std::snprintf(hour, sizeof hour, "%02d:00", peak);
-    row("Peak hour", hour);
+    row(w_.svg_peak_hour, hour);
   }
 
   void timeline() {
@@ -193,7 +177,7 @@ class Card {
     const double base = 418;
     const double height = 56;
     const double width = 752;
-    text(left, 350, "Activity over time", 13, t_.text, "600");
+    text(left, 350, w_.svg_activity, 13, t_.text, "600");
     const Timeline timeline = bucket_timeline(s_, 94);
     if (timeline.buckets.empty()) return;
     const std::int64_t max = *std::max_element(timeline.buckets.begin(), timeline.buckets.end());
@@ -209,9 +193,9 @@ class Card {
       const double h = std::max(3.0, static_cast<double>(v) / static_cast<double>(max) * height);
       rect(x, base - h, bar, h, t_.heat[3], 1.5);
     }
-    text(left, base + 16, format_month(s_.first_day), 10, t_.muted);
+    text(left, base + 16, loc_.month_year(s_.first_day), 10, t_.muted);
     if (s_.last_day != s_.first_day) {
-      text(left + width, base + 16, format_month(s_.last_day), 10, t_.muted, "400", "end");
+      text(left + width, base + 16, loc_.month_year(s_.last_day), 10, t_.muted, "400", "end");
     }
   }
 
@@ -238,14 +222,9 @@ class Card {
 
     double lx = left;
     for (const LanguageStat& l : s_.languages) {
-      const double pct = static_cast<double>(l.lines) / static_cast<double>(total) * 100.0;
-      if (pct < 0.05) continue;
-      char share[32];
-      std::snprintf(share, sizeof share, "%.1f%%", pct);
-      std::string label = l.name + " " + share;
-      for (char& c : label) {
-        if (c == ',') c = '.';
-      }
+      const double ratio = static_cast<double>(l.lines) / static_cast<double>(total);
+      if (ratio < 0.0005) continue;
+      const std::string label = loc_.language_name(l.name) + " " + loc_.percent1(ratio);
       const double item = 18 + static_cast<double>(display_width(label)) * 6.6;
       if (lx + item > left + width) break;
       out_ += "  <circle cx=\"" + num(lx + 4) + "\" cy=\"" + num(y + 25) + "\" r=\"4\" fill=\"" +
@@ -263,19 +242,21 @@ class Card {
       if (i != 0) words += "  ·  ";
       words += truncate_right(s_.top_words[i].label, 16, "…");
     }
-    text(24, 506, "Most used words:  " + words, 11, t_.muted);
+    text(24, 506, std::string(w_.svg_words) + "  " + words, 11, t_.muted);
   }
 
   const Stats& s_;
   const RepoInfo& repo_;
   const Theme& t_;
+  const Locale loc_;
+  const Strings& w_;
   std::string out_;
 };
 
 }  // namespace
 
 std::string render_svg(const Stats& stats, const RepoInfo& repo, const SvgOptions& options) {
-  return Card(stats, repo, options.dark ? kDark : kLight).build();
+  return Card(stats, repo, options.dark ? kDark : kLight, options.lang).build();
 }
 
 }  // namespace gitstory
